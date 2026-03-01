@@ -695,8 +695,17 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Manual trigger for trading cycle
+// Manual trigger for trading cycle (POST)
 app.post('/api/trade-now', async (req, res) => {
+  await runTradingCycle(res);
+});
+
+// Manual trigger for trading cycle (GET - for cron-job.org)
+app.get('/api/trade-now', async (req, res) => {
+  await runTradingCycle(res);
+});
+
+async function runTradingCycle(res) {
   try {
     await ensureInitialized();
     console.log('🔄 Manual trading trigger...');
@@ -736,7 +745,7 @@ app.post('/api/trade-now', async (req, res) => {
     console.error('Error in manual trade:', error.message);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
 // WebSocket handler (local only)
 if (typeof wss !== 'undefined') {
