@@ -70,14 +70,12 @@ let cachedDb = null;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/llm_trading';
 
 async function connectDB() {
-  if (cachedDb) return cachedDb;
+  if (cachedDb && mongoose.connection.readyState === 1) return cachedDb;
   
   try {
     const db = await mongoose.connect(MONGODB_URI, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
-      bufferCommands: false,
-      serverSelectionTimeoutMS: 5000
+      useUnifiedTopology: true
     });
     cachedDb = db;
     console.log('🗄️ Connected to MongoDB');
