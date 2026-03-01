@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const WebSocket = require('ws');
 const cron = require('node-cron');
 require('dotenv').config();
 
@@ -14,28 +13,42 @@ const StockData = require('./models/StockData');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const WS_PORT = process.env.WS_PORT || 8080;
+
+// Vercel serverless check
+const isVercel = process.env.VERCEL === '1';
 
 app.use(cors());
 app.use(express.json());
 
-// WebSocket server for real-time updates
-const wss = new WebSocket.Server({ port: WS_PORT });
+// MongoDB connection with caching for serverless
+let cachedDb = null;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/llm_trading';
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/llm_trading')
-.then(() => {
-  console.log('🗄️ Connected to MongoDB');
-  initializeTradingSystem();
-})
-.catch(error => {
-  console.error('❌ MongoDB connection error:', error);
-  console.log('⚠️ Continuing without database - using in-memory storage');
-  initializeTradingSystem();
-});
+async function connectDB() {
+  if (cachedDb) return cachedDb;
+  
+  try {
+    const db = await mongoose.connect(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000
+    });
+    cachedDb = db;
+    console.log('🗄️ Connected to MongoDB');
+    return db;
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error.message);
+    return null;
+  }
+}
 
 // Initialize trading system
+let systemInitialized = false;
+
 async function initializeTradingSystem() {
+  if (systemInitialized) return;
+  
   try {
     console.log('🚀 Initializing trading system...');
     
@@ -45,12 +58,23 @@ async function initializeTradingSystem() {
     // Initialize LLM agents
     await initializeAgents();
     
-    // Start real-time updates (every 15 minutes)
-    stockService.startRealTimeUpdates(15);
+    // Start real-time updates (every 1 hour) - only on local server
+    if (!isVercel) {
+      stockService.startRealTimeUpdates(60);
+    }
     
+    systemInitialized = true;
     console.log('✅ Trading system initialized successfully');
   } catch (error) {
     console.error('❌ Failed to initialize trading system:', error);
+  }
+}
+
+// Auto-initialize on serverless (on first request)
+async function ensureInitialized() {
+  await connectDB();
+  if (!systemInitialized) {
+    await initializeTradingSystem();
   }
 }
 
@@ -376,9 +400,11 @@ async function broadcastUpdate() {
   }
 }
 
-// Trading decisions every 1 hour
-cron.schedule('0 * * * *', async () => {
-  console.log('🤖 ========== STARTING TRADING CYCLE ==========');
+// Trading decisions every 1 hour (local server only)
+// On Vercel, use cron-job.org to hit /api/trade-now endpoint
+if (!isVercel) {
+  cron.schedule('0 * * * *', async () => {
+    console.log('🤖 ========== STARTING TRADING CYCLE ==========');
   console.log(`⏰ Time: ${new Date().toISOString()}`);
   
   try {
@@ -425,11 +451,13 @@ cron.schedule('0 * * * *', async () => {
   } catch (error) {
     console.error('Error in trading cycle:', error.message);
   }
-});
+  });
+}
 
 // API Routes
 app.get('/api/agents', async (req, res) => {
   try {
+    await ensureInitialized();
     const agents = await LLMAgent.find({ isActive: true });
     const stockPrices = await getCurrentStockPrices();
     
@@ -492,6 +520,7 @@ app.get('/api/agents', async (req, res) => {
 
 app.get('/api/trades', async (req, res) => {
   try {
+    await ensureInitialized();
     const limit = parseInt(req.query.limit) || 50;
     const trades = await Trade.find({})
       .sort({ timestamp: -1 })
@@ -532,6 +561,7 @@ app.get('/api/trades', async (req, res) => {
 
 app.get('/api/leaderboard', async (req, res) => {
   try {
+    await ensureInitialized();
     const agents = await LLMAgent.find({ isActive: true });
     const stockPrices = await getCurrentStockPrices();
     
@@ -569,6 +599,7 @@ app.get('/api/leaderboard', async (req, res) => {
 
 app.get('/api/stocks', async (req, res) => {
   try {
+    await ensureInitialized();
     const stocks = await stockService.getAllStocks();
     res.json(stocks);
   } catch (error) {
@@ -580,6 +611,7 @@ app.get('/api/stocks', async (req, res) => {
 // Reset all data and start fresh
 app.post('/api/reset', async (req, res) => {
   try {
+    await ensureInitialized();
     await Trade.deleteMany({});
     await LLMAgent.deleteMany({});
     
@@ -592,17 +624,20 @@ app.post('/api/reset', async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  await ensureInitialized();
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    serverless: isVercel
   });
 });
 
 // Manual trigger for trading cycle
 app.post('/api/trade-now', async (req, res) => {
   try {
+    await ensureInitialized();
     console.log('🔄 Manual trading trigger...');
     
     const agents = await LLMAgent.find({ isActive: true });
@@ -660,8 +695,15 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 LLM Trading Server running on port ${PORT}`);
-  console.log(`📡 WebSocket server running on port ${WS_PORT}`);
-  console.log(`💰 ${4} LLMs competing with ₹2000 each`);
-});
+// Start server (local only, not on Vercel)
+
+if (!isVercel) {
+  app.listen(PORT, () => {
+    console.log(`🚀 LLM Trading Server running on port ${PORT}`);
+    console.log(`📡 WebSocket server running on port ${WS_PORT}`);
+    console.log(`💰 ${4} LLMs competing with ₹2000 each`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
