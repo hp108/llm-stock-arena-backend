@@ -6,8 +6,28 @@ const cron = require('node-cron');
 // WebSocket - only for local server
 let WebSocket;
 let wss;
-const isVercel = process.env.VERCEL === '1';
+let isVercel = false;
 
+// Load env vars first
+try {
+  require('dotenv').config();
+  isVercel = process.env.VERCEL === '1';
+} catch (e) {}
+
+// Import services and models
+let stockService, freeLLMTrading, LLMAgent, Trade, StockData;
+
+try {
+  stockService = require('./services/stockService');
+  freeLLMTrading = require('./services/freeLLMTrading');
+  LLMAgent = require('./models/LLMAgent');
+  Trade = require('./models/Trade');
+  StockData = require('./models/StockData');
+} catch (importError) {
+  console.error('⚠️ Import error:', importError.message);
+}
+
+// WebSocket setup (local only)
 if (!isVercel) {
   try {
     WebSocket = require('ws');
@@ -16,13 +36,6 @@ if (!isVercel) {
     console.log('⚠️ WebSocket not available');
   }
 }
-
-// Import services and models
-const stockService = require('./services/stockService');
-const freeLLMTrading = require('./services/freeLLMTrading');
-const LLMAgent = require('./models/LLMAgent');
-const Trade = require('./models/Trade');
-const StockData = require('./models/StockData');
 
 // Load env vars (optional - will use process.env if .env not available)
 try {
