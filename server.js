@@ -50,6 +50,21 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'LLM Stock Arena API',
+    endpoints: [
+      '/api/health',
+      '/api/agents',
+      '/api/trades',
+      '/api/stocks',
+      '/api/leaderboard'
+    ]
+  });
+});
+
 // MongoDB connection with caching for serverless
 let cachedDb = null;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/llm_trading';
