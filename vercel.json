@@ -11,11 +11,5 @@
       "src": "/api/(.*)",
       "destination": "/server.js"
     }
-  ],
-  "functions": [
-    {
-      "runtime": "@vercel/node@3.0.0",
-      "maxDuration": 60
-    }
   ]
 }
