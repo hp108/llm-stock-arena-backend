@@ -695,18 +695,19 @@ app.get('/api/health', async (req, res) => {
 
 // Manual trigger for trading cycle (POST)
 app.post('/api/trade-now', async (req, res) => {
-  await runTradingCycle(res);
+  res.json({ message: 'Trade trigger received, processing in background...' });
+  runTradingCycle().catch(err => console.error('Trade error:', err));
 });
 
 // Manual trigger for trading cycle (GET - for cron-job.org)
 app.get('/api/trade-now', async (req, res) => {
-  await runTradingCycle(res);
+  res.json({ message: 'Trade trigger received, processing in background...' });
+  runTradingCycle().catch(err => console.error('Trade error:', err));
 });
 
-async function runTradingCycle(res) {
+async function runTradingCycle() {
   try {
-    await ensureInitialized();
-    console.log('🔄 Manual trading trigger...');
+    console.log('🔄 Starting trading cycle...');
     
     const agents = await LLMAgent.find({ isActive: true });
     const stockData = await stockService.getAllStocks();
@@ -738,10 +739,9 @@ async function runTradingCycle(res) {
     }
     
     await broadcastUpdate();
-    res.json({ success: true, results });
+    console.log('✅ Trading cycle complete');
   } catch (error) {
-    console.error('Error in manual trade:', error.message);
-    res.status(500).json({ error: error.message });
+    console.error('Error in trading cycle:', error.message);
   }
 }
 
