@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
-require('dotenv').config();
 
 // Import services and models
 const stockService = require('./services/stockService');
@@ -10,6 +9,13 @@ const freeLLMTrading = require('./services/freeLLMTrading');
 const LLMAgent = require('./models/LLMAgent');
 const Trade = require('./models/Trade');
 const StockData = require('./models/StockData');
+
+// Load env vars (optional - will use process.env if .env not available)
+try {
+  require('dotenv').config();
+} catch (e) {
+  // Ignore - running on Vercel without .env file
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -72,9 +78,14 @@ async function initializeTradingSystem() {
 
 // Auto-initialize on serverless (on first request)
 async function ensureInitialized() {
-  await connectDB();
-  if (!systemInitialized) {
-    await initializeTradingSystem();
+  try {
+    await connectDB();
+    if (!systemInitialized) {
+      await initializeTradingSystem();
+    }
+  } catch (error) {
+    console.error('⚠️ Initialization warning:', error.message);
+    // Don't fail completely - continue anyway
   }
 }
 
@@ -388,13 +399,15 @@ async function broadcastUpdate() {
       timestamp: new Date().toISOString()
     };
 
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify(message));
-      }
-    });
-
-    console.log(`📡 Broadcasted update to ${wss.clients.size} WebSocket clients`);
+    // WebSocket broadcast (local only)
+    if (typeof wss !== 'undefined') {
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+      console.log(`📡 Broadcasted update to ${wss.clients.size} WebSocket clients`);
+    }
   } catch (error) {
     console.error('Error broadcasting update:', error.message);
   }
@@ -677,15 +690,17 @@ app.post('/api/trade-now', async (req, res) => {
   }
 });
 
-// WebSocket handler
-wss.on('connection', (ws) => {
-  console.log('🔗 Client connected to trading updates');
-  broadcastUpdate();
-  
-  ws.on('close', () => {
-    console.log('❌ Client disconnected');
+// WebSocket handler (local only)
+if (typeof wss !== 'undefined') {
+  wss.on('connection', (ws) => {
+    console.log('🔗 Client connected to trading updates');
+    broadcastUpdate();
+    
+    ws.on('close', () => {
+      console.log('❌ Client disconnected');
+    });
   });
-});
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
