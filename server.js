@@ -338,7 +338,7 @@ async function executeTrade(agent, decision) {
 
 // Get trading strategy based on reasoning
 function getTradingStrategy(reasoning) {
-  const lowerReasoning = reasoning.toLowerCase();
+  const lowerReasoning = reasoning.toLowerCase(); 
   
   if (lowerReasoning.includes('momentum') || lowerReasoning.includes('trend')) return 'Momentum';
   if (lowerReasoning.includes('value') || lowerReasoning.includes('undervalued')) return 'Value Investing';
