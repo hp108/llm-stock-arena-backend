@@ -649,13 +649,22 @@ app.post('/api/reset', async (req, res) => {
 });
 
 app.get('/api/health', async (req, res) => {
-  await ensureInitialized();
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    serverless: isVercel
-  });
+  try {
+    await ensureInitialized();
+    res.json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+      serverless: isVercel
+    });
+  } catch (error) {
+    res.status(200).json({ 
+      status: 'Error', 
+      message: error.message,
+      timestamp: new Date().toISOString(),
+      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    });
+  }
 });
 
 // Manual trigger for trading cycle
