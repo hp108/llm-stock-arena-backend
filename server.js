@@ -3,6 +3,20 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
 
+// WebSocket - only for local server
+let WebSocket;
+let wss;
+const isVercel = process.env.VERCEL === '1';
+
+if (!isVercel) {
+  try {
+    WebSocket = require('ws');
+    wss = new WebSocket.Server({ port: process.env.WS_PORT || 8080 });
+  } catch (e) {
+    console.log('⚠️ WebSocket not available');
+  }
+}
+
 // Import services and models
 const stockService = require('./services/stockService');
 const freeLLMTrading = require('./services/freeLLMTrading');
@@ -19,9 +33,6 @@ try {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-// Vercel serverless check
-const isVercel = process.env.VERCEL === '1';
 
 app.use(cors());
 app.use(express.json());
@@ -400,9 +411,9 @@ async function broadcastUpdate() {
     };
 
     // WebSocket broadcast (local only)
-    if (typeof wss !== 'undefined') {
+    if (typeof wss !== 'undefined' && typeof WebSocket !== 'undefined') {
       wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+        if (client.readyState === 1) { // WebSocket.OPEN = 1
           client.send(JSON.stringify(message));
         }
       });
