@@ -695,14 +695,14 @@ app.get('/api/health', async (req, res) => {
 
 // Manual trigger for trading cycle (POST)
 app.post('/api/trade-now', async (req, res) => {
-  res.json({ message: 'Trade trigger received, processing in background...' });
-  runTradingCycle().catch(err => console.error('Trade error:', err));
+  res.json({ message: 'Trade triggered' });
+  process.nextTick(() => runTradingCycle().catch(err => console.error('Trade error:', err)));
 });
 
 // Manual trigger for trading cycle (GET - for cron-job.org)
 app.get('/api/trade-now', async (req, res) => {
-  res.json({ message: 'Trade trigger received, processing in background...' });
-  runTradingCycle().catch(err => console.error('Trade error:', err));
+  res.json({ message: 'Trade triggered' });
+  process.nextTick(() => runTradingCycle().catch(err => console.error('Trade error:', err)));
 });
 
 async function runTradingCycle() {
