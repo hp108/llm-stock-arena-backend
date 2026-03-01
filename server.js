@@ -763,7 +763,7 @@ process.on('SIGTERM', async () => {
 if (!isVercel) {
   app.listen(PORT, () => {
     console.log(`🚀 LLM Trading Server running on port ${PORT}`);
-    console.log(`📡 WebSocket server running on port ${WS_PORT}`);
+    console.log(`📡 WebSocket server running on port ${process.env.WS_PORT || 8080}`);
     console.log(`💰 ${4} LLMs competing with ₹2000 each`);
   });
 }
