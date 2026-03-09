@@ -1,24 +1,63 @@
 const axios = require('axios');
 const StockData = require('../models/StockData');
 
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || '';
+const FINNHUB_BASE = 'https://finnhub.io/api/v1';
+
 class StockService {
   constructor() {
     this.tradingSymbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA', 'NFLX', 'PYPL', 'INTC'];
     this.updateInterval = null;
+    this.stockCache = new Map();
+    this.lastFetch = 0;
+    this.CACHE_DURATION = 5 * 60 * 1000;
   }
 
   async initializeStocks() {
     try {
-      console.log('🔍 Initializing stock data (Yahoo Finance Free)...');
+      console.log('🔍 Initializing stock data (Yahoo Finance)...');
+      // Try to load from database first
+      const existingStocks = await StockData.find({});
+      if (existingStocks.length > 0) {
+        console.log(`📦 Loaded ${existingStocks.length} stocks from database`);
+        existingStocks.forEach(s => {
+          this.stockCache.set(s.symbol, s);
+        });
+        return;
+      }
+      
+      // If no existing data, fetch from Yahoo
       for (const symbol of this.tradingSymbols) {
         await this.updateStockPrice(symbol);
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       console.log(`✅ Initialized ${this.tradingSymbols.length} stocks`);
     } catch (error) {
       console.error('Error:', error.message);
       await this.initializeFallbackStocks();
     }
+  }
+
+  async getAllStocks() {
+    // Check cache first
+    const now = Date.now();
+    if (this.stockCache.size > 0 && (now - this.lastFetch) < this.CACHE_DURATION) {
+      return Array.from(this.stockCache.values());
+    }
+    
+    // Try to get from database
+    try {
+      const stocks = await StockData.find({ currentPrice: { $gt: 0 } });
+      if (stocks.length > 0) {
+        stocks.forEach(s => this.stockCache.set(s.symbol, s));
+        this.lastFetch = now;
+        return stocks;
+      }
+    } catch (e) {
+      console.log('DB query failed, using cache');
+    }
+    
+    return Array.from(this.stockCache.values());
   }
 
   async updateStockPrice(symbol) {
@@ -85,6 +124,53 @@ class StockService {
       throw new Error('Invalid data');
     } catch (error) {
       console.error(`Yahoo error ${symbol}:`, error.message.slice(0, 50));
+      // Try Finnhub as backup
+      if (FINNHUB_API_KEY) {
+        await this.updateStockPriceFinnhub(symbol);
+      } else {
+        await this.getFallbackStockData(symbol);
+      }
+    }
+  }
+
+  async updateStockPriceFinnhub(symbol) {
+    try {
+      const response = await axios.get(
+        `${FINNHUB_BASE}/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`,
+        { timeout: 5000 }
+      );
+
+      const data = response.data;
+      if (data.c && data.c > 0) {
+        const price = data.c;
+        const prevClose = data.pc || data.pc || price;
+        
+        const stockInfo = {
+          symbol: symbol,
+          name: this.getCompanyName(symbol),
+          currentPrice: price,
+          previousClose: prevClose,
+          dayChange: price - prevClose,
+          dayChangePercent: ((price - prevClose) / prevClose) * 100,
+          market: 'NASDAQ',
+          sector: this.getSector(symbol),
+          priceHistory: [],
+          avgVolume: 1000000,
+          volume: 1000000
+        };
+
+        await StockData.findOneAndUpdate(
+          { symbol: symbol },
+          { $set: stockInfo },
+          { upsert: true, returnDocument: 'after' }
+        );
+
+        console.log(`📈 ${symbol}: ₹${price.toFixed(2)} (${stockInfo.dayChangePercent >= 0 ? '+' : ''}${stockInfo.dayChangePercent.toFixed(2)}%) [Finnhub]`);
+        return;
+      }
+      throw new Error('Invalid Finnhub data');
+    } catch (error) {
+      console.error(`Finnhub error ${symbol}:`, error.message.slice(0, 50));
       await this.getFallbackStockData(symbol);
     }
   }
