@@ -40,7 +40,7 @@ class FreeLLMTrading {
       if (!provider) throw new Error('Unknown agent');
       
       console.log(`📞 ${agent.name}: Calling LLM API...`);
-      const response = await provider.api(prompt, provider.model);
+      const response = await provider.api(prompt, provider.model, agent.name);
       console.log(`✅ ${agent.name}: Got LLM response!`);
       console.log(`🔍 ${agent.name} raw response:`, response.slice(0, 200));
       
@@ -341,9 +341,9 @@ Respond JSON:
 {"action":"BUY|SELL|HOLD","symbol":"STOCK","quantity":number,"reasoning":"reason"}`;
   }
 
-  async callGroq(prompt, model) {
+  async callGroq(prompt, model, agentName = 'Unknown') {
     const key = this.getApiKeys().groq;
-    console.log(`📡 ${agent.name}: Calling Groq with model: ${model}`);
+    console.log(`📡 ${agentName}: Calling Groq with model: ${model}`);
     try {
       const response = await axios.post(
         'https://api.groq.com/openai/v1/chat/completions',
@@ -360,7 +360,7 @@ Respond JSON:
       );
       return response.data.choices[0].message.content;
     } catch (error) {
-      console.error(`❌ ${agent.name} (${model}): Groq Error: ${error.message}`, error.response?.data?.error?.message || '');
+      console.error(`❌ ${agentName} (${model}): Groq Error: ${error.message}`, error.response?.data?.error?.message || '');
       throw error;
     }
   }
