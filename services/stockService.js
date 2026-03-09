@@ -15,8 +15,8 @@ class StockService {
 
   async initializeStocks() {
     try {
-      console.log('🔍 Initializing stock data (Yahoo Finance)...');
-      // Try to load from database first
+      console.log('🔍 Initializing stock data (Finnhub)...');
+      
       const existingStocks = await StockData.find({});
       if (existingStocks.length > 0) {
         console.log(`📦 Loaded ${existingStocks.length} stocks from database`);
@@ -26,10 +26,9 @@ class StockService {
         return;
       }
       
-      // If no existing data, fetch from Yahoo
       for (const symbol of this.tradingSymbols) {
         await this.updateStockPrice(symbol);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       console.log(`✅ Initialized ${this.tradingSymbols.length} stocks`);
     } catch (error) {
@@ -39,13 +38,11 @@ class StockService {
   }
 
   async getAllStocks() {
-    // Check cache first
     const now = Date.now();
     if (this.stockCache.size > 0 && (now - this.lastFetch) < this.CACHE_DURATION) {
       return Array.from(this.stockCache.values());
     }
     
-    // Try to get from database
     try {
       const stocks = await StockData.find({ currentPrice: { $gt: 0 } });
       if (stocks.length > 0) {
@@ -61,79 +58,12 @@ class StockService {
   }
 
   async updateStockPrice(symbol) {
-    try {
-        const response = await axios.get(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
-        { 
-          timeout: 5000,
-          params: { interval: '5m', range: '2h' }
-        }
-      );
-
-      const data = response.data;
-      if (data.chart?.result?.[0]) {
-        const result = data.chart.result[0];
-        const meta = result.meta;
-        const price = meta.regularMarketPrice || meta.previousClose;
-        const prevClose = meta.chartPreviousClose || meta.previousClose || price;
-        
-        const timestamps = result.timestamp || [];
-        const quote = result.indicators?.quote?.[0] || {};
-        const closes = quote.close || [];
-        const volumes = quote.volume || [];
-        
-        const validPrices = closes.filter(c => c !== null);
-        const avgVolume = volumes.length > 0 
-          ? volumes.filter(v => v !== null).reduce((a, b) => a + b, 0) / volumes.length 
-          : 1000000;
-        
-        const priceHistory = timestamps.map((ts, i) => ({
-          timestamp: new Date(ts * 1000),
-          close: closes[i] || price,
-          volume: volumes[i] || avgVolume
-        })).filter(p => p.close !== null);
-        
-        const priceHistoryArray = priceHistory.slice(-100).map(p => ({
-          price: p.close,
-          timestamp: p.timestamp
-        }));
-        
-        const stockInfo = {
-          symbol: symbol,
-          name: this.getCompanyName(symbol),
-          currentPrice: price,
-          previousClose: prevClose,
-          dayChange: price - prevClose,
-          dayChangePercent: ((price - prevClose) / prevClose) * 100,
-          market: 'NASDAQ',
-          sector: this.getSector(symbol),
-          priceHistory: priceHistoryArray,
-          avgVolume: avgVolume,
-          volume: volumes[volumes.length - 1] || avgVolume
-        };
-
-        await StockData.findOneAndUpdate(
-          { symbol: symbol },
-          { $set: stockInfo },
-          { upsert: true, returnDocument: 'after' }
-        );
-
-        console.log(`📈 ${symbol}: ₹${price.toFixed(2)} (${stockInfo.dayChangePercent >= 0 ? '+' : ''}${stockInfo.dayChangePercent.toFixed(2)}%) [${priceHistory.length} pts]`);
-        return;
-      }
-      throw new Error('Invalid data');
-    } catch (error) {
-      console.error(`Yahoo error ${symbol}:`, error.message.slice(0, 50));
-      // Try Finnhub as backup
-      if (FINNHUB_API_KEY) {
-        await this.updateStockPriceFinnhub(symbol);
-      } else {
-        await this.getFallbackStockData(symbol);
-      }
+    if (!FINNHUB_API_KEY) {
+      console.log(`⚠️ No FINNHUB_API_KEY, using fallback`);
+      await this.getFallbackStockData(symbol);
+      return;
     }
-  }
 
-  async updateStockPriceFinnhub(symbol) {
     try {
       const response = await axios.get(
         `${FINNHUB_BASE}/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`,
@@ -143,7 +73,7 @@ class StockService {
       const data = response.data;
       if (data.c && data.c > 0) {
         const price = data.c;
-        const prevClose = data.pc || data.pc || price;
+        const prevClose = data.pc || price;
         
         const stockInfo = {
           symbol: symbol,
@@ -151,7 +81,7 @@ class StockService {
           currentPrice: price,
           previousClose: prevClose,
           dayChange: price - prevClose,
-          dayChangePercent: ((price - prevClose) / prevClose) * 100,
+          dayChangePercent: prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0,
           market: 'NASDAQ',
           sector: this.getSector(symbol),
           priceHistory: [],
@@ -165,6 +95,7 @@ class StockService {
           { upsert: true, returnDocument: 'after' }
         );
 
+        this.stockCache.set(symbol, stockInfo);
         console.log(`📈 ${symbol}: ₹${price.toFixed(2)} (${stockInfo.dayChangePercent >= 0 ? '+' : ''}${stockInfo.dayChangePercent.toFixed(2)}%) [Finnhub]`);
         return;
       }
@@ -231,20 +162,6 @@ class StockService {
     for (const symbol of this.tradingSymbols) await this.getFallbackStockData(symbol);
   }
 
-  async getAllStocks() {
-    const stocks = await StockData.find({ currentPrice: { $gt: 0 } });
-    return stocks.map(s => {
-      const obj = s.toObject();
-      return { 
-        ...obj, 
-        price: s.currentPrice, 
-        change: s.dayChange, 
-        changePercent: s.dayChangePercent,
-        priceHistory: obj.priceHistory?.map(p => p.price) || []
-      };
-    });
-  }
-
   getStockPrices() {
     return StockData.find({ currentPrice: { $gt: 0 } }).then(stocks => {
       const priceMap = {};
@@ -255,7 +172,7 @@ class StockService {
 
   startRealTimeUpdates(intervalMinutes = 5) {
     if (this.updateInterval) clearInterval(this.updateInterval);
-    console.log(`🔄 Real-time updates every ${intervalMinutes} min (Yahoo Finance Free)`);
+    console.log(`🔄 Real-time updates every ${intervalMinutes} min (Finnhub)`);
     this.updateAllStocks();
     this.updateInterval = setInterval(() => this.updateAllStocks(), intervalMinutes * 60 * 1000);
   }
@@ -264,7 +181,7 @@ class StockService {
     console.log('🔄 Updating stocks...');
     for (const symbol of this.tradingSymbols) {
       await this.updateStockPrice(symbol).catch(e => console.error(e.message));
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 1000));
     }
     console.log('✅ Stock update complete');
   }
