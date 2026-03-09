@@ -135,13 +135,13 @@ async function initializeAgents(reset = false) {
     {
       name: 'ChatGPT',
       provider: 'Groq',
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       color: '#10a37f'
     },
     {
       name: 'Claude',
       provider: 'Groq',
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.2-3b-instant',
       color: '#d97757'
     },
     {

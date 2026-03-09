@@ -4,8 +4,8 @@ const axios = require('axios');
 class FreeLLMTrading {
   constructor() {
     this.providers = {
-      'ChatGPT': { api: this.callGroq.bind(this), model: 'llama-3.1-70b-versatile' },
-      'Claude': { api: this.callGroq.bind(this), model: 'mixtral-8x7b-32768' },
+      'ChatGPT': { api: this.callGroq.bind(this), model: 'llama-3.3-70b-versatile' },
+      'Claude': { api: this.callGroq.bind(this), model: 'llama-3.2-3b-instant' },
       'Grok': { api: this.callGroq.bind(this), model: 'llama-3.1-8b-instant' },
       'DeepSeek': { api: this.callGroq.bind(this), model: 'deepseek-r1-distill-llama-70b' }
     };
