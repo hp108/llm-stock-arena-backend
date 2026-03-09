@@ -718,9 +718,9 @@ async function runTradingCycle() {
     
     for (let i = 0; i < agents.length; i++) {
       const agent = agents[i];
+      console.log(`🔄 Processing ${agent.name} (${i+1}/${agents.length})...`);
+      
       try {
-        console.log(`🔄 Processing ${agent.name}...`);
-        
         const portfolioObj = {};
         if (agent.portfolio instanceof Map) {
           for (const [key, value] of agent.portfolio.entries()) {
@@ -729,12 +729,12 @@ async function runTradingCycle() {
         }
 
         const decision = await freeLLMTrading.getTradingDecision(agent, stockData, portfolioObj);
-        console.log(`🤖 ${agent.name}: ${decision.action} ${decision.symbol || ''}`);
+        console.log(`🤖 ${agent.name}: ${decision.action} ${decision.symbol || '-'} - ${decision.reasoning?.slice(0, 50)}`);
         
         const result = await executeTrade(agent, decision);
         results.push({ agent: agent.name, decision: decision.action, symbol: decision.symbol, success: result.success });
         
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 2000));
       } catch (error) {
         console.error(`❌ Error for ${agent.name}:`, error.message);
         results.push({ agent: agent.name, error: error.message });
